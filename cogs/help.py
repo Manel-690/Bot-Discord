@@ -3,6 +3,10 @@ from discord.ext import commands
 from utils.constants import *
 
 class Help(commands.Cog):
+    """
+    Cog responsável pelo comando de help.
+    Monta as embeds e responde de acordo com o canal em que o comando foi enviado.
+    """
     def __init__(self, bot):
         self.bot = bot
         self.handlers = {

@@ -1,6 +1,10 @@
 from discord.ext import commands
 
 class Events(commands.Cog):
+    """
+    Cog responsável pelos eventos globais.
+    Escuta eventos do discord e responde situações específicas
+    """
     def __init__(self, bot):
         self.bot = bot
     
