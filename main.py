@@ -2,8 +2,9 @@ import discord as dc
 from discord.ext import commands
 from dotenv import load_dotenv
 from utils.constants import *
+from services.brawlstars import get_trophies
 import os
-import csv
+import httpx
 
 load_dotenv()
 
@@ -16,26 +17,26 @@ class form_button(dc.ui.View):
     @staticmethod
     def get_cache(interaction: dc.Interaction):
         result = None
-        with open("cache.csv", mode="r", encoding="utf-8") as arq:
+        with open("database/cache.csv", mode="r", encoding="utf-8") as arq:
             linhas = arq.readlines()
             for index, linha in enumerate(linhas):
                 col = linha.strip().split(",")
                 if col[0] == str(interaction.message.id):
                     linhas.pop(index)
-                    result = col[1], col[2], col[3]
+                    result = col[1], col[2], col[3], col[4]
                     break
             
-        with open("cache.csv", mode="w", encoding="utf-8") as arq:
+        with open("database/cache.csv", mode="w", encoding="utf-8") as arq:
             arq.writelines(linhas)
                 
         return result
 
     @staticmethod
-    def save_csv(name: str, game_id: str, number: str):
-        with open("dados.csv", mode="a", encoding="utf-8") as arq:
-            arq.write(",".join([name, game_id, number]) + "\n")
+    def save_csv(name: str, game_id: str, number: str, trophies: str):
+        with open("database/dados.csv", mode="a", encoding="utf-8") as arq:
+            arq.write(",".join([name, game_id, number, trophies]) + "\n")
     
-    @dc.ui.button(style=dc.ButtonStyle.green, emoji="✅", custom_id="fzxbtn_accept_form")
+    @dc.ui.button(style=dc.ButtonStyle.green, emoji="✅", custom_id="btn_accept_form")
     async def accept(self, interaction: dc.Interaction, button=dc.ui.Button):
         embed = interaction.message.embeds[0]
 
@@ -51,7 +52,7 @@ class form_button(dc.ui.View):
 
         await interaction.response.edit_message(embed=embed, view=self)
 
-    @dc.ui.button(style=dc.ButtonStyle.green, emoji="❌", custom_id="fzxbtn_decline_form")
+    @dc.ui.button(style=dc.ButtonStyle.red, emoji="❌", custom_id="btn_decline_form")
     async def decline(self, interaction: dc.Interaction, button=dc.ui.Button):
         embed = interaction.message.embeds[0]
 
@@ -63,7 +64,6 @@ class form_button(dc.ui.View):
             item.disabled = True
 
         cached = self.get_cache(interaction)
-        self.save_csv(*cached)
 
         await interaction.response.edit_message(embed=embed, view=self)
 
@@ -71,7 +71,7 @@ class recruitment_form(dc.ui.Modal, title="Clubs Recruitment Form"):
     input_name = dc.ui.Label(
         text="Qual é o seu nome?",
         component=dc.ui.TextInput(
-            custom_id="fzxname_form_modal",
+            custom_id="name_form_modal",
             placeholder="Escreva seu nome completo...", 
             style=dc.TextStyle.short,
             min_length=8, max_length=50
@@ -81,7 +81,7 @@ class recruitment_form(dc.ui.Modal, title="Clubs Recruitment Form"):
     input_id = dc.ui.Label(
         text="Qual é o seu ID no jogo? (ex.: 9JPJJPUUY)",
         component=dc.ui.TextInput(
-            custom_id="fzxid_form_modal",
+            custom_id="id_form_modal",
             placeholder="Digite seu ID do Brawl Stars...", 
             style=dc.TextStyle.short,
             min_length=5, max_length=10
@@ -91,20 +91,20 @@ class recruitment_form(dc.ui.Modal, title="Clubs Recruitment Form"):
     input_num = dc.ui.Label(
         text="Qual é o seu número de telefone?",
         component=dc.ui.TextInput(
-            custom_id="fzxnum_form_modal",
+            custom_id="num_form_modal",
             placeholder="Digite seu número de telefone com DDD...",
             style=dc.TextStyle.short,
-            min_length=11, max_length=11
+            min_length=11, max_length=15
         )
     )
 
     input_reason = dc.ui.Label(
         text="Um motivo para ser aceito (ex.: sei la)",
         component=dc.ui.TextInput(
-            custom_id="fzxreason_form_modal",
+            custom_id="reason_form_modal",
             placeholder="Escreva um bom motivo...",
             style=dc.TextStyle.long,
-            min_length=5, max_length=80
+            min_length=5, max_length=150
         )
     )
 
@@ -112,8 +112,8 @@ class recruitment_form(dc.ui.Modal, title="Clubs Recruitment Form"):
         if game_id.startswith("#"):
             game_id = game_id[1:]
             
+        game_id = game_id.upper()
         number = "".join(char for char in number if char.isdigit())
-
         return game_id, number
 
     async def validate_num(self, interaction: dc.Interaction, number: str):
@@ -125,7 +125,7 @@ class recruitment_form(dc.ui.Modal, title="Clubs Recruitment Form"):
         return True
 
     async def verify_duplicate(self, interaction: dc.Interaction, name: str, game_id: str, number: str):
-        with open("dados.csv", mode="r", encoding="utf-8") as arq:
+        with open("database/dados.csv", mode="r", encoding="utf-8") as arq:
             for linha in arq:
                 col = linha.strip().split(",")
                 if col[1] == game_id:
@@ -141,7 +141,7 @@ class recruitment_form(dc.ui.Modal, title="Clubs Recruitment Form"):
                     )
                     return False
 
-        with open("cache.csv", mode="r", encoding="utf-8") as arq:
+        with open("database/cache.csv", mode="r", encoding="utf-8") as arq:
             for linha in arq:
                 col = linha.strip().split(",")
                 if col[2] == game_id or col[3] == number:
@@ -152,9 +152,9 @@ class recruitment_form(dc.ui.Modal, title="Clubs Recruitment Form"):
                     return False
         return True
 
-    def save_cache(self, message_id: int, name: str, game_id: str, number: str):
-        with open("cache.csv", mode="a", encoding="utf-8") as arq:
-            arq.write(",".join([str(message_id), name, game_id, number]) + "\n") 
+    def save_cache(self, message_id: int, name: str, game_id: str, number: str, trophies: int):
+        with open("database/cache.csv", mode="a", encoding="utf-8") as arq:
+            arq.write(",".join([str(message_id), name, game_id, number, str(trophies)]) + "\n") 
 
     async def send_form(self, interaction: dc.Interaction, name: str, game_id: str, number: str, reason: str):
         channel = interaction.client.get_channel(FORMS_CHANNEL_ID)
@@ -164,6 +164,9 @@ class recruitment_form(dc.ui.Modal, title="Clubs Recruitment Form"):
             except Exception as e:
                 print(f"Erro ao buscar o canal de formulários: {e}")
                 return False
+
+        trophies = await get_trophies(game_id)
+        trophies_str = f"{trophies:,}".replace(",", ".") if trophies > 0 else "Não sei"
 
         embed = dc.Embed(
             title="📝 Formulário de Recrutamento", 
@@ -176,6 +179,7 @@ class recruitment_form(dc.ui.Modal, title="Clubs Recruitment Form"):
                 f"```yaml\n"
                 f"Nickname: {name}\n"
                 f"ID: #{game_id}\n"
+                f"Troféus: {trophies_str}\n"
                 f"Telefone: {number}\n"
                 f"```\n"
                 f"**Motivo:**\n"
@@ -186,7 +190,7 @@ class recruitment_form(dc.ui.Modal, title="Clubs Recruitment Form"):
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
         mensagem = await channel.send(embed=embed, view=form_button())
-        self.save_cache(mensagem.id, name, game_id, number)
+        self.save_cache(mensagem.id, name, game_id, number, trophies)
         return True
 
     async def on_submit(self, interaction: dc.Interaction):
@@ -209,7 +213,7 @@ class recruitment_panel(dc.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @dc.ui.button(label="Abrir Formulário", custom_id="fzxform_button")
+    @dc.ui.button(label="Abrir Formulário", custom_id="form_button")
     async def open_form(self, interaction: dc.Interaction, button: dc.ui.Button):
         await interaction.response.send_modal(recruitment_form())
 
@@ -217,7 +221,7 @@ class Bot(commands.Bot):
     def __init__(self):
         intents = dc.Intents.default()
         intents.message_content = True
-        super().__init__(command_prefix="69", intents=intents, help_command=None)
+        super().__init__(command_prefix="67", intents=intents, help_command=None)
 
     async def setup_hook(self):
         self.add_view(recruitment_panel())

@@ -19,7 +19,5 @@ class Events(commands.Cog):
             if msg.author.name == "genebrau":
                 await msg.reply("seu cocozao")
 
-        await self.bot.process_commands(msg)
-
 async def setup(bot):
     await bot.add_cog(Events(bot))

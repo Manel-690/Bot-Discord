@@ -1,3 +1,4 @@
+import discord as dc
 from discord.ext import commands
 from utils.constants import *
 
@@ -11,10 +12,10 @@ class Help(commands.Cog):
             POKETWO_CHANNEL_ID: self.handle_poketwo
         }
 
-    async def default_handler(ctx):
+    async def default_handler(self, ctx):
         await ctx.reply("em desenvolvimento...")
 
-    async def handle_mudae(ctx):
+    async def handle_mudae(self, ctx):
         embed = dc.Embed(
             title=":sparkling_heart: **Guia Básico do Mudae**",
             description=":pushpin: **Importante:** O Mudae é um bot de coleção de personagens de animes, jogos, filmes e séries. Seu objetivo é rolar personagens, capturá-los, montar sua coleção e acumular Kakera para desbloquear vantagens.",
@@ -34,7 +35,7 @@ class Help(commands.Cog):
         embed.set_footer(text="🏆 Comandos essenciais: $m • $wa • $wg • $mm • $profile • $im • $wish • $trade • $kakera • $daily • $mu")
         await ctx.reply(embed=embed)
 
-    async def handle_akinator(ctx):
+    async def handle_akinator(self, ctx):
         embed = dc.Embed(
             title=":tophat: **Comandos do Akinator**",
             color = dc.Color.blue()
@@ -45,7 +46,7 @@ class Help(commands.Cog):
         embed.add_field(name="`/pat @usuário`", value="> Demonstre carinho dando um cafuné (pat) em outro membro", inline=True)
         await ctx.reply(embed=embed)
 
-    async def handle_gartic(ctx):
+    async def handle_gartic(self, ctx):
         embed = dc.Embed(
             title=":art: **Guia Básico do GarticBOT**",
             description=":pushpin: **Importante:** Digite suas respostas diretamente no chat para tentar adivinhar o desenho antes dos outros jogadores.",
@@ -60,7 +61,7 @@ class Help(commands.Cog):
         embed.set_footer(text="🎯 Adivinhe os desenhos o mais rápido possível para marcar mais pontos! • Qualquer dúvida, abra um ticket.")
         await ctx.reply(embed=embed)
 
-    async def handle_poketwo(ctx):
+    async def handle_poketwo(self, ctx):
         embed = dc.Embed(
             title=":zap: **Guia Básico do Pokétwo**",
             description="""
@@ -89,7 +90,7 @@ class Help(commands.Cog):
 
     @commands.command()
     async def help(self, ctx):
-        handler = handlers.get(ctx.channel.id)
+        handler = self.handlers.get(ctx.channel.id)
 
         if handler: 
             await handler(ctx)
