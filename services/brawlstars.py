@@ -6,21 +6,22 @@ class BrawlStarsService:
     """
     Serviço de conexão com a API do Brawl Stars.
     """
-    async def get_player_data(self, game_id: str):
-        url = f"{BRAWL_API_URL}/players/{game_id}"
-        
+
+    async def get_player_data(self, player_id: str):
+        return await self._get_data("players", player_id)
+
+    async def get_club_data(self, club_id: str):
+        return await self._get_data("clubs", club_id)
+
+    async def _get_data(self, endpoint: str, bs_id: str):
+        url = f"{BRAWL_API_URL}/{endpoint}/{bs_id}"
+
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.get(url)
                 if response.status_code == 200:
                     return response.json()
                 return None
-            except Exception as e:
-                print(f"Erro ao conectar na VPS: {e}")
+            except Exception as err:
+                print(f"Erro ao conectar na VPS: {err}")
                 return None
-
-    async def get_trophies(self, game_id: str):
-        dados = await self.get_player_data(game_id)
-        if dados:
-            return int(dados.get("trophies", 0))
-        return 0

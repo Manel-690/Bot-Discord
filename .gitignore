@@ -89,6 +89,15 @@ dist
 # https://nextjs.org/blog/next-9-1#public-directory-support
 # public
 
+# pycache
+__pycache__/
+
+# venv
+venv/
+
+# backups
+backups/
+
 # vuepress build output
 .vuepress/dist
 

@@ -1,10 +1,5 @@
 import discord as dc
 from discord.ext import commands
-from repositories.csv_candidates import CandidatesRepository
-from repositories.csv_members import MembersRepository
-from services.form_validator import FormValidator
-from services.recruitment_service import RecruitmentService
-from services.brawlstars import BrawlStarsService
 from dotenv import load_dotenv
 import os
 

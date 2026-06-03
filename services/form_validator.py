@@ -2,13 +2,13 @@ class FormValidator:
     """
     Serviço de validação do formulário de recrutamento
     """
-    def clean(self, game_id: str, phone: str) -> (str, str):
+    def clean(self, player_id: str, phone: str) -> (str, str):
         """
         Limpa e formata os dados de ID e telefone enviados no formulário.
 
         Parameters
         ----------
-        game_id : str
+        player_id : str
             ID do jogador.
         phone_id : str
             Número de telefone.
@@ -20,12 +20,12 @@ class FormValidator:
         str
             Apenas os dígitos do número de telefone.
         """
-        if game_id.startswith("#"):
-            game_id = game_id[1:]
-        game_id = game_id.upper()
+        if player_id.startswith("#"):
+            player_id = player_id[1:]
+        player_id = player_id.upper()
         phone = "".join(char for char in phone if char.isdigit())
 
-        return game_id, phone
+        return player_id, phone
 
     def validate(self, phone: str) -> str:
         """

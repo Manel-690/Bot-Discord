@@ -51,7 +51,7 @@ class RecruitmentModal(dc.ui.Modal, title="Clubs Recruitment Form"):
         result = await self.service.submit(
             interaction,
             name = self.input_name.component.value,
-            game_id = self.input_id.component.value,
+            player_id = self.input_id.component.value,
             phone = self.input_num.component.value,
             reason = self.input_reason.component.value
         )

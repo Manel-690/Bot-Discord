@@ -2,6 +2,12 @@ import discord as dc
 from discord.ext import commands
 from views.form_button import FormButton
 from views.recruitment_panel import RecruitmentPanel
+from repositories.csv_candidates import CandidatesRepository
+from repositories.csv_members import MembersRepository
+from services.form_validator import FormValidator
+from services.recruitment_service import RecruitmentService
+from services.brawlstars import BrawlStarsService
+from services.clubs_service import ClubsService
 
 class Recruitment(commands.Cog):
     """
@@ -27,10 +33,12 @@ class Recruitment(commands.Cog):
         await ctx.message.delete()
 
 async def setup(bot):
+    brawl = BrawlStarsService()
     service = RecruitmentService(
         validator=FormValidator(),
-        brawl=BrawlStarsService(),
+        brawl=brawl,
         candidates=CandidatesRepository(),
-        members=MembersRepository()
+        members=MembersRepository(),
+        clubs=ClubsService(brawl)
     )
     await bot.add_cog(Recruitment(bot, service))

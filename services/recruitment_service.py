@@ -1,7 +1,9 @@
 import discord as dc
 from dataclasses import dataclass
+from views.form_button import FormButton
 from services.form_validator import FormValidator
 from services.brawlstars import BrawlStarsService
+from services.clubs_service import ClubsService, Division
 from repositories.csv_candidates import CandidatesRepository
 from repositories.csv_members import MembersRepository
 from utils.constants import FORMS_CHANNEL_ID
@@ -17,7 +19,7 @@ class RecruitmentService:
     Serviço responsável por organizar o fluxo do recrutamento.
     Valida dados, checa duplicatas, busca troféus e organiza o envio e avaliação de formulários.
     """
-    def __init__(self, validator, brawl, members, candidates):
+    def __init__(self, validator, brawl, members, candidates, clubs):
         """
         Parameters
         ----------
@@ -25,13 +27,15 @@ class RecruitmentService:
         brawl : BrawlStarsService
         members : MembersRepository
         candidates : CandidatesRepository
+        clubs : ClubsService
         """
         self.validator = validator
         self.brawl = brawl
         self.members = members
         self.candidates = candidates
+        self.clubs = clubs
 
-    async def submit(self, interaction: dc.Interaction, name: str, game_id: str, phone: str, reason: str):
+    async def submit(self, interaction: dc.Interaction, name: str, player_id: str, phone: str, reason: str):
         """
         Realiza o envio um formulário de recrutamento no canal de recrutamento e aguarda aprovação.
 
@@ -41,7 +45,7 @@ class RecruitmentService:
             Interação do discord que originou o envio do formulário.
         name : str
             Nome do candidato.
-        game_id : str
+        player_id : str
             ID do jogador.
         phone : str
             Telefone do candidato.
@@ -53,33 +57,41 @@ class RecruitmentService:
         SubmitResult
             Resultado com ok=True, ou ok=False e mensagem de erro.
         """
-        game_id, phone = self.validator.clean(game_id, phone)
+        player_id, phone = self.validator.clean(player_id, phone)
 
         error = self.validator.validate(phone)
         if error:
             return SubmitResult(ok=False, error=error)
 
-        if self.members.exists(game_id=game_id):
+        if self.members.exists(player_id=player_id):
             return SubmitResult(ok=False, error="ID já cadastrado.")
 
         if self.members.exists(phone=phone):
             return SubmitResult(ok=False, error="Telefone já cadastrado.")
 
-        if self.candidates.exists(game_id=game_id, phone=phone):
+        if self.candidates.exists(player_id=player_id, phone=phone):
             return SubmitResult(ok=False, error="Você já enviou o formulário, aguarde.")
 
-        trophies = await self.brawl.get_trophies(game_id)
-        embed = self._build_embed(interaction, name, game_id, phone, reason, trophies)
+        player = await self.brawl.get_player_data(player_id)
+        if player is None:
+            return SubmitResult(ok=False, error="Jogador não encontrado.")
+
+        trophies = int(player.get("trophies", 0))
+        
+        division = await self.clubs.get_division(trophies)
+        if division is None:
+            return SubmitResult(ok=False, error="Não temos uma divisão adequada para você no momento :()")
+
+        embed = self._build_embed(interaction, name, player_id, phone, reason, trophies, division)
 
         channel = await self._get_channel(interaction)
 
         if channel is None:
             return SubmitResult(ok=False, error="Canal de formulários não encontrado.")
 
-        from views.form_button import FormButton
         message = await channel.send(embed=embed, view=FormButton(self))
 
-        self.candidates.save(message.id, name, game_id, phone, trophies)
+        self.candidates.save(message.id, name, player_id, phone, trophies, division.name)
 
         return SubmitResult(ok=True)
 
@@ -95,13 +107,13 @@ class RecruitmentService:
         """
         Resolve um formulário como aprovado ou recusado.
 
-        Edita o embed com o status final, desativa os botões e, se aprovado,
-        move o candidato para o repositório de membros.
+        Edita o embed com o status final, desativa os botões, tenta enviar o resultado 
+        na dm e, se aprovado, move o candidato para o repositório de membros.
 
         Parameters
         ----------
         interaction : discord.Interaction
-            Interação do discord que originou o envio do formulário.
+            Interação do discord que avaliou o formulário.
         approved : bool
             True para aprovar, False para recusar.
         """
@@ -114,16 +126,16 @@ class RecruitmentService:
             candidates = self.candidates.pop(interaction.message.id)
             if candidates:
                 self.members.save(*candidates)
+                user = interaction.message.mentions[0]
+                await user.send("")
 
-        view = interaction.message.components
-        from views.form_button import FormButton
         disabled_view = FormButton(self)
         for item in disabled_view.children:
             item.disabled = True
 
         await interaction.response.edit_message(embed=embed, view=disabled_view)
 
-    def _build_embed(self, interaction: dc.Interaction, name: str, game_id: str, phone: str, reason: str, trophies: int):
+    def _build_embed(self, interaction: dc.Interaction, name: str, player_id: str, phone: str, reason: str, trophies: int, division: Division):
         """
         Monta o embed do formulário.
         
@@ -133,7 +145,7 @@ class RecruitmentService:
             Interação do discord que originou o envio do formulário.
         name : str
             Nome do candidato.
-        game_id : str
+        player_id : str
             ID do jogador.
         phone : str
             Telefone do candidato.
@@ -141,6 +153,8 @@ class RecruitmentService:
             Motivo para entrar na comunidade.
         trophies : int
             Número de troféus do jogador.
+        division : Division
+            A divisão mais adequada para o jogador.
 
         Returns
         -------
@@ -148,6 +162,7 @@ class RecruitmentService:
             Embed formatado com os dados do candidato para envio.
         """
         trophies_str = f"{trophies:,}".replace(",", ".") if trophies > 0 else "Não sei"
+
         return dc.Embed(
             title="📝 Formulário de Recrutamento", 
             color=dc.Color.default(), 
@@ -158,8 +173,9 @@ class RecruitmentService:
                 f"--------------------------\n"
                 f"```yaml\n"
                 f"Nickname: {name}\n"
-                f"ID: #{game_id}\n"
+                f"ID: #{player_id}\n"
                 f"Troféus: {trophies_str}\n"
+                f"Divisão adequada: {division.name}\n"
                 f"Telefone: ({phone[:2]}) {phone[2]} {phone[3:7]}-{phone[7:]}\n"
                 f"```\n"
                 f"**Motivo:**\n"
@@ -175,7 +191,7 @@ class RecruitmentService:
         Parameters
         ----------
         interaction : discord.Interaction
-            Interação do discord que originou o envio do formulário
+            Interação do discord que originou o envio do formulário.
         
         Returns
         -------
