@@ -1,23 +1,77 @@
 import discord as dc
 from discord.ext import commands
-import os
 from dotenv import load_dotenv
-
+from utils.constants import *
+import os
 import csv
 
 load_dotenv()
 
 TOKEN = os.getenv("BOT_TOKEN")
-MUDAE_CHANNEL = os.getenv("MUDAE_CHANNEL_ID")
-AKINATOR_CHANNEL = os.getenv("AKINATOR_CHANNEL_iD")
-GARTIC_CHANNEL = os.getenv("GARTIC_CHANNEL_iD")
-POKETWO_CHANNEL = os.getenv("POKETWO_CHANNEL_iD")
+
+class form_button(dc.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @staticmethod
+    def get_cache(interaction: dc.Interaction):
+        result = None
+        with open("cache.csv", mode="r", encoding="utf-8") as arq:
+            linhas = arq.readlines()
+            for index, linha in enumerate(linhas):
+                col = linha.strip().split(",")
+                if col[0] == str(interaction.message.id):
+                    linhas.pop(index)
+                    result = col[1], col[2], col[3]
+                    break
+            
+        with open("cache.csv", mode="w", encoding="utf-8") as arq:
+            arq.writelines(linhas)
+                
+        return result
+
+    @staticmethod
+    def save_csv(name: str, game_id: str, number: str):
+        with open("dados.csv", mode="a", encoding="utf-8") as arq:
+            arq.write(",".join([name, game_id, number]) + "\n")
+    
+    @dc.ui.button(style=dc.ButtonStyle.green, emoji="✅", custom_id="fzxbtn_accept_form")
+    async def accept(self, interaction: dc.Interaction, button=dc.ui.Button):
+        embed = interaction.message.embeds[0]
+
+        desc = embed.description
+        embed.description = desc.replace("Aguardando análise...", f"Aprovado por {interaction.user.mention}!")
+        embed.color = dc.Color.green()
+
+        for item in self.children:
+            item.disabled = True
+
+        cached = self.get_cache(interaction)
+        self.save_csv(*cached)
+
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @dc.ui.button(style=dc.ButtonStyle.green, emoji="❌", custom_id="fzxbtn_decline_form")
+    async def decline(self, interaction: dc.Interaction, button=dc.ui.Button):
+        embed = interaction.message.embeds[0]
+
+        desc = embed.description
+        embed.description = desc.replace("Aguardando análise...", f"Recusado por {interaction.user.mention}!")
+        embed.color = dc.Color.red()
+
+        for item in self.children:
+            item.disabled = True
+
+        cached = self.get_cache(interaction)
+        self.save_csv(*cached)
+
+        await interaction.response.edit_message(embed=embed, view=self)
 
 class recruitment_form(dc.ui.Modal, title="Clubs Recruitment Form"):
     input_name = dc.ui.Label(
         text="Qual é o seu nome?",
         component=dc.ui.TextInput(
-            custom_id="name_form_modal",
+            custom_id="fzxname_form_modal",
             placeholder="Escreva seu nome completo...", 
             style=dc.TextStyle.short,
             min_length=8, max_length=50
@@ -25,9 +79,9 @@ class recruitment_form(dc.ui.Modal, title="Clubs Recruitment Form"):
     )
 
     input_id = dc.ui.Label(
-        text="Qual é o ID no jogo? (ex.: 9JPJJPUUY)",
+        text="Qual é o seu ID no jogo? (ex.: 9JPJJPUUY)",
         component=dc.ui.TextInput(
-            custom_id="id_form_modal",
+            custom_id="fzxid_form_modal",
             placeholder="Digite seu ID do Brawl Stars...", 
             style=dc.TextStyle.short,
             min_length=5, max_length=10
@@ -37,7 +91,7 @@ class recruitment_form(dc.ui.Modal, title="Clubs Recruitment Form"):
     input_num = dc.ui.Label(
         text="Qual é o seu número de telefone?",
         component=dc.ui.TextInput(
-            custom_id="num_form_modal",
+            custom_id="fzxnum_form_modal",
             placeholder="Digite seu número de telefone com DDD...",
             style=dc.TextStyle.short,
             min_length=11, max_length=11
@@ -47,12 +101,93 @@ class recruitment_form(dc.ui.Modal, title="Clubs Recruitment Form"):
     input_reason = dc.ui.Label(
         text="Um motivo para ser aceito (ex.: sei la)",
         component=dc.ui.TextInput(
-            custom_id="reason_form_modal",
+            custom_id="fzxreason_form_modal",
             placeholder="Escreva um bom motivo...",
             style=dc.TextStyle.long,
             min_length=5, max_length=80
         )
     )
+
+    def clean_form(self, game_id: str, number: str):
+        if game_id.startswith("#"):
+            game_id = game_id[1:]
+            
+        number = "".join(char for char in number if char.isdigit())
+
+        return game_id, number
+
+    async def validate_num(self, interaction: dc.Interaction, number: str):
+        if len(number) != 11:
+            await interaction.response.send_message(
+                "O telefone deve conter 8 dígitos: DDD + 9 + NUM"
+            )
+            return False
+        return True
+
+    async def verify_duplicate(self, interaction: dc.Interaction, name: str, game_id: str, number: str):
+        with open("dados.csv", mode="r", encoding="utf-8") as arq:
+            for linha in arq:
+                col = linha.strip().split(",")
+                if col[1] == game_id:
+                    await interaction.response.send_message(
+                        "O ID informado já está cadastrado.",
+                        ephemeral=True
+                    )
+                    return False
+                elif col[2] == number:
+                    await interaction.response.send_message(
+                        "O número de telefone informado já está cadastrado.",
+                        ephemeral=True
+                    )
+                    return False
+
+        with open("cache.csv", mode="r", encoding="utf-8") as arq:
+            for linha in arq:
+                col = linha.strip().split(",")
+                if col[2] == game_id or col[3] == number:
+                    await interaction.response.send_message(
+                        "Você já enviou o formulário, aguarde o resultado.",
+                        ephemeral=True
+                    )
+                    return False
+        return True
+
+    def save_cache(self, message_id: int, name: str, game_id: str, number: str):
+        with open("cache.csv", mode="a", encoding="utf-8") as arq:
+            arq.write(",".join([str(message_id), name, game_id, number]) + "\n") 
+
+    async def send_form(self, interaction: dc.Interaction, name: str, game_id: str, number: str, reason: str):
+        channel = interaction.client.get_channel(FORMS_CHANNEL_ID)
+        if channel is None:
+            try:
+                channel = await interaction.client.fetch_channel(FORMS_CHANNEL_ID)
+            except Exception as e:
+                print(f"Erro ao buscar o canal de formulários: {e}")
+                return False
+
+        embed = dc.Embed(
+            title="📝 Formulário de Recrutamento", 
+            color=dc.Color.default(), 
+            timestamp=interaction.created_at,
+            description=(
+                f"**Usuário:** {interaction.user.mention}\n"
+                f"**Status:** Aguardando análise...\n"
+                f"--------------------------\n"
+                f"```yaml\n"
+                f"Nickname: {name}\n"
+                f"ID: #{game_id}\n"
+                f"Telefone: {number}\n"
+                f"```\n"
+                f"**Motivo:**\n"
+                f"> {reason}\n"
+                f"--------------------------\n"
+            )
+        )
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+
+        mensagem = await channel.send(embed=embed, view=form_button())
+        self.save_cache(mensagem.id, name, game_id, number)
+        return True
 
     async def on_submit(self, interaction: dc.Interaction):
         typed_name = self.input_name.component.value
@@ -60,20 +195,21 @@ class recruitment_form(dc.ui.Modal, title="Clubs Recruitment Form"):
         typed_num = self.input_num.component.value
         typed_reason = self.input_reason.component.value
 
-        with open("dados.csv", mode="a", encoding="utf-8") as arq:
-            arq.write(",".join([typed_name, typed_id, typed_num]) + "\n")
+        typed_id, typed_num = self.clean_form(typed_id, typed_num)
 
-        await interaction.response.send_message(
-            "enviado!",
-            ephemeral=True
-        )
+        if not await self.validate_num(interaction, typed_num): 
+            return
+        if not await self.verify_duplicate(interaction, typed_name, typed_id, typed_num): 
+            return
 
+        await interaction.response.send_message("enviado!", ephemeral=True)
+        await self.send_form(interaction, typed_name, typed_id, typed_num, typed_reason)
 
 class recruitment_panel(dc.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @dc.ui.button(label="Abrir Formulário", custom_id="form_button")
+    @dc.ui.button(label="Abrir Formulário", custom_id="fzxform_button")
     async def open_form(self, interaction: dc.Interaction, button: dc.ui.Button):
         await interaction.response.send_modal(recruitment_form())
 
@@ -81,27 +217,15 @@ class Bot(commands.Bot):
     def __init__(self):
         intents = dc.Intents.default()
         intents.message_content = True
-        super().__init__(command_prefix="67", intents=intents, help_command=None)
+        super().__init__(command_prefix="69", intents=intents, help_command=None)
 
     async def setup_hook(self):
         self.add_view(recruitment_panel())
-        print("setupado")
+        self.add_view(form_button())
+        await self.load_extension("cogs.help")
+        await self.load_extension("cogs.events")
 
 bot = Bot()
-
-@bot.event
-async def on_ready():
-    print("logado eba")
-
-@bot.event
-async def on_message(msg):
-    if msg.content == "oi":
-        if msg.author.name == "felipoz":
-            await msg.add_reaction("❤️")
-        if msg.author.name == "genebrau":
-            await msg.reply("seu cocozao")
-
-    await bot.process_commands(msg)
 
 # ============= commands =============
 
@@ -116,10 +240,9 @@ async def view_ctx(ctx):
     for key, value in attributes.items():
         print(f"{key}: {value} ({type(value)})")
 
-
 @bot.command()
+@commands.has_permissions(administrator=True)
 async def setup_recruitment(ctx):
-    print("oi")
     embed = dc.Embed(
         title="recrutamento!!",
         description="clique aqui pra se alistar",
@@ -127,93 +250,5 @@ async def setup_recruitment(ctx):
 
     await ctx.send(embed=embed, view=recruitment_panel())
     await ctx.message.delete()
-
-async def handle_mudae(ctx):
-    embed = dc.Embed(
-        title=":sparkling_heart: **Guia Básico do Mudae**",
-        description=":pushpin: **Importante:** O Mudae é um bot de coleção de personagens de animes, jogos, filmes e séries. Seu objetivo é rolar personagens, capturá-los, montar sua coleção e acumular Kakera para desbloquear vantagens.",
-        color=dc.Color.pink()
-    )
-
-    embed.add_field(name=":game_die: `Rolar personagens`", value="`$m` → Personagem aleatório\n`$wa` → Apenas personagens de anime/mangá\n`$wg` → Apenas personagens de jogos",inline=False)
-    embed.add_field(name=":sparkling_heart: `Capturar personagens`", value="Reaja com 💖 quando um personagem aparecer para adicioná-lo à sua coleção.",inline=False)
-    embed.add_field(name=":books: `Sua coleção`", value="`$mm` → Exibe sua coleção completa\n`$profile` → Mostra seu perfil\n`$fm` → Define seu personagem favorito",inline=False)
-    embed.add_field(name=":mag: `Pesquisar personagens`", value="`$im Nome` → Pesquisa um personagem\nExemplo: `$im Rem`",inline=False)
-    embed.add_field(name=":star: `Lista de desejos`", value="`$wish Nome` → Adiciona um personagem à sua wishlist\nExemplo: `$wish Rem`",inline=False)
-    embed.add_field(name=":handshake: `Trocas`", value="`$trade @Usuário` → Inicia uma troca\n`$give @Usuário` → Presenteia um personagem",inline=False)
-    embed.add_field(name=":broken_heart: `Remover personagens`", value="`$divorce Nome` → Remove um personagem da sua coleção",inline=False)
-    embed.add_field(name=":gem: `Kakera`", value="`$kakera` → Mostra seus badges e progresso\n`$dailykakera` → Resgata Kakera diário\n`$kakeratower` → Constrói sua Torre de Kakera",inline=False)
-    embed.add_field(name=":alarm_clock: `Temporizadores`", value="`$mu` → Tempo até o próximo claim\n`$rollsup` → Tempo até novas rolagens\n`$timersup` → Mostra todos os temporizadores",inline=False)
-    embed.add_field(name=":gift: `Recompensas`", value="`$daily` → Receba rolls extras diariamente\n`$vote` → Vote no Mudae e ganhe benefícios",inline=False)
-    embed.set_footer(text="🏆 Comandos essenciais: $m • $wa • $wg • $mm • $profile • $im • $wish • $trade • $kakera • $daily • $mu")
-    await ctx.reply(embed=embed)
-
-async def handle_akinator(ctx):
-    embed = dc.Embed(
-        title=":tophat: **Comandos do Akinator**",
-        color = dc.Color.blue()
-    )
-    
-    embed.add_field(name="`/aki`", value="> Inicia uma partida do Akinator", inline=True)
-    embed.add_field(name="`/8ball`", value="> Faça uma pergunta e receba uma resposta aleatória da bola 8ball", inline=True)
-    embed.add_field(name="`/pat @usuário`", value="> Demonstre carinho dando um cafuné (pat) em outro membro", inline=True)
-    await ctx.reply(embed=embed)
-
-async def handle_gartic(ctx):
-    embed = dc.Embed(
-        title=":art: **Guia Básico do GarticBOT**",
-        description=":pushpin: **Importante:** Digite suas respostas diretamente no chat para tentar adivinhar o desenho antes dos outros jogadores.",
-        color=dc.Color.green()
-    )
-
-    embed.add_field(name="`gartic`", value="> Inicia uma nova partida de Gartic no canal.", inline=True)
-    embed.add_field(name="`dica`", value="> Receba uma dica sobre o desenho atual.\n> Máximo de 5 dicas por partida.", inline=True)
-    embed.add_field(name="`desenho`", value="> Exibe novamente o desenho atual no chat.", inline=True)
-    embed.add_field(name="`record`", value="> Mostra o recorde atual do canal e do tema em jogo.", inline=True)
-    embed.add_field(name="`pular`", value="> Pula o desenho atual e inicia um novo.\n> Máximo de 3 pulos por partida.", inline=True)
-    embed.set_footer(text="🎯 Adivinhe os desenhos o mais rápido possível para marcar mais pontos! • Qualquer dúvida, abra um ticket.")
-    await ctx.reply(embed=embed)
-
-async def handle_poketwo(ctx):
-    embed = dc.Embed(
-        title=":zap: **Guia Básico do Pokétwo**",
-        description="""
-        :pushpin: **Importante:** Para usar os comandos, é necessário mencionar o bot antes do comando.
-        \nExemplo:\n`@Pokétwo catch Pikachu`  ou  `@Pokétwo pokemon`
-        """,
-        color=dc.Color.yellow()
-    )
-
-    embed.add_field(name="`start`", value="> Inicia sua jornada Pokémon.", inline=True)
-    embed.add_field(name="`pick <pokémon>`", value="> Escolha seu Pokémon inicial.", inline=True)
-    embed.add_field(name="`catch <pokémon>`", value="> Captura um Pokémon que apareceu no chat.", inline=True)
-    embed.add_field(name="`hint`", value="> Receba uma dica sobre o Pokémon atual.", inline=True)
-    embed.add_field(name="`pokemon`", value="> Mostra sua coleção de Pokémon", inline=True)
-    embed.add_field(name="`info <número>`", value="> Exibe informações detalhadas de um Pokémon.", inline=True)
-    embed.add_field(name="`select <número>`", value="> Define um Pokémon como principal.", inline=True)
-    embed.add_field(name="`evolve`", value="> Evolui o Pokémon selecionado, se possível.", inline=True)
-    embed.add_field(name="`favorite <número>`", value="> Marca um Pokémon como favorito.", inline=True)
-    embed.add_field(name="`trade @usuário`", value="> Inicia uma troca com outro treinador.", inline=True)
-    embed.add_field(name="`market search <pokémon>`", value="> Procura um Pokémon no mercado.", inline=True)
-    embed.add_field(name="`market buy <ID>`", value="> Compra um Pokémon do mercado.", inline=True)
-    embed.add_field(name="`market add <número> <preço>`", value="> Coloca um Pokémon à venda.", inline=True)
-    embed.add_field(name="`reindex`", value="> Organiza e renumera sua coleção.", inline=True)
-    embed.set_footer(text="🎯 Converse no servidor para fazer Pokémons aparecerem no chat e aumente sua coleção!")
-    await ctx.reply(embed=embed)
-
-HELP_HANDLERS = {
-    MUDAE_CHANNEL: handle_mudae,
-    AKINATOR_CHANNEL: handle_akinator,
-    GARTIC_CHANNEL: handle_gartic,
-    POKETWO_CHANNEL: handle_poketwo
-}
-
-@bot.command()
-async def help(ctx):
-    handler = HELP_HANDLERS.get(str(ctx.channel.id))
-    if handler:
-        await handler(ctx)
-    else:
-        print("nada")    
 
 bot.run(TOKEN)
