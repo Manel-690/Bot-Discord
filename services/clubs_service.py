@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 @dataclass
 class Division:
+    """Informações da divisão"""
     name: str
     club_id: str
     min_trophies: int
